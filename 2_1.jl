@@ -38,7 +38,7 @@ Dxxp = xxp[2]-xxp[1]
 psf = zeros(Nxxp)
 ind = abs.(xxp).<a
 psf[ind] .= PSF(xxp[ind], a)
-Ca = trapz(xxp, psf)
+Ca = trapz(1:length(psf), psf)
 Ca = 1/(Dxxp*Ca)
 psf = Ca*psf
 
@@ -48,7 +48,7 @@ for i in 1:Nxx
     # ψ(x-x')
     targ = target(xx[i].-xxp)
     # ∫f(x')ψ(x-x')dx'
-    result[i] = Dxxp*trapz(xxp,psf.*targ)
+    result[i] = Dxxp*trapz(1:length(targ),psf.*targ)
 end
 
 plot(xx, result, label="covoluted")
@@ -59,12 +59,72 @@ n = 64
 x = collect(0:n-1)/n
 Dx = x[2]-x[1]
 
-noise_level = 0.05
+sigma = 0.05
 
 # Interpolate values
-int = scale(interpolate(result, BSpline(Cubic(Line(OnGrid())))), xx)
+int = Interpolations.scale(interpolate(result, BSpline(Cubic(Line(OnGrid())))), xx)
+data = int(x)
 
 # Add noise
-noisyx = 
+noisy_data = rand.(Normal.(data ,sigma.*abs.(data)),1) |>
+    Iterators.flatten |>
+    collect
 
-plot(x, int(x))
+
+plot(x, data)
+scatter!(x, noisy_data)
+
+max_error = maximum(abs.(data.-noisy_data)/maximum(abs.(data)))
+println("Maximum error $max_error")
+
+# Inverse crimes
+nPSF = ceil(a/Dx)
+xPSF = (-nPSF:nPSF)*Dx
+
+PSF_data = zeros(size(xPSF))
+ind = abs.(xPSF).<a
+PSF_data[ind] .= PSF(PSF_data[ind],a)
+Ca = 1/(Dx*trapz(1:length(PSF_data), PSF_data))
+PSF_data = Ca*PSF_data
+
+function convmtx(h::Vector, n::Int)
+    k = length(h)
+    m = n + k - 1
+    H = zeros(eltype(h), m, n)
+
+    for col in 1:n
+        for row in 1:k
+            if col + row - 1 <= m
+                H[col + row - 1, col] = h[row]
+            end
+        end
+    end
+    H = H'
+    # Correct for boundary condition
+    m = floor(Int((length(h)-1)/2))
+    H2 = H[:,m+1:end-m]
+    for _ in 1:m
+        H2[1:m,end-m+1:end] = H[1:m,1:m]
+        H2[end-m+1:end,1:m] = H[end-m+1:end,end-m+1:end]
+    end
+
+    return H2
+end
+
+A = Dx*convmtx(PSF_data, n)
+
+# Inverse crimed data
+f = target(x)
+mIC = A*f
+
+plot(x, mIC)
+scatter!(x, mIC)
+scatter!(x, noisy_data)
+plot!(x, target(x))
+
+# A^-1*(A*f)
+plot(x,(A\I)*mIC)
+# A^-1*̂Af
+plot!(x,(A\I)*data)
+# A^-1*̂A(f+ϵ)
+plot!(x,(A\I)*noisy_data)
