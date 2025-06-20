@@ -16,7 +16,7 @@ dt = t[2]-t[1]
 
 # Initial heat distribution
 Z = zeros(tdim,xdim)
-Z[1,:] .= 10*sin.(2*xdim)   # u(x,0) = 10sin(2x)
+Z[1,:] .= 10*sin.(2*x)   # u(x,0) = 10sin(2x)
 Z[:,1] .= 0                 # u(0,t) = 0
 Z[:,xdim] .= 0              # u(L,t) = 0
 
@@ -28,13 +28,13 @@ for time in 2:tdim
 end
 
 ZM = zeros(xdim, tdim)
-ZM[:,1] .= 10*sin.(2*xdim)   # u(x,0) = 10sin(2x)
+ZM[:,1] .= 10*sin.(2*x)   # u(x,0) = 10sin(2x)
 ZM[1,:] .= 0                 # u(0,t) = 0
 ZM[xdim,:] .= 0              # u(L,t) = 0
 
 S = D*dt/dx^2
 n = length(x)-2
-A = (1-2*S)*sparse(I(n))
+A = (1-2*S)*Matrix(I(n))
 A[diagind(A, 1)] .= S
 A[diagind(A, -1)] .= S
 
@@ -50,15 +50,30 @@ uDataNoisy = rand.(Normal.(uData ,sigma.*abs.(uData)),1) |>
     collect
 
 # Exact solution
-function u_exact(x)
-    10*exp(-4*T)*sin(2*x)
+function u_exact(x;t=T)
+    10*exp(-4*t)*sin(2*x)
 end
 
 sn = maximum(u_exact.(x))
 supnorm = norm(Z[tdim,:].-u_exact.(x),Inf)
 
 plot(x, Z[1,:])
-plot!(x, uData)
 plot!(x, Z[tdim,:])
 
 plot(t,x,Z',st=:surface,camera=(-120,30))
+
+# Inverse solver
+xn = x[2:xdim-1]
+uData_m = uData[2:end-1]
+n_it = 4
+ss = tdim-n_it
+
+back_step = (A\I)*uData_m
+p = plot()
+plot!(p, xn, back_step,label="1")
+for i in 1:tdim-ss
+    back_step .= (A\I)*back_step
+    plot!(p,xn, back_step, label="$(i+1)")
+end
+plot!(p,xn,u_exact.(xn,t=dt*ss),label="exact",color=:red)
+p
