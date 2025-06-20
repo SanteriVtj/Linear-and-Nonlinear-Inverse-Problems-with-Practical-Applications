@@ -1,5 +1,11 @@
 using LinearAlgebra, Trapz, Plots, Interpolations, Distributions, Test, SparseArrays
 
+function add_pct_noise(x,sigma)
+    rand.(Normal.(x ,sigma.*abs.(uData)),1) |>
+        Iterators.flatten |>
+        collect
+end
+
 sigma = .01
 L = π
 D = 1
@@ -63,17 +69,37 @@ plot!(x, Z[tdim,:])
 plot(t,x,Z',st=:surface,camera=(-120,30))
 
 # Inverse solver
-xn = x[2:xdim-1]
-uData_m = uData[2:end-1]
-n_it = 4
-ss = tdim-n_it
-
-back_step = (A\I)*uData_m
-p = plot()
-plot!(p, xn, back_step,label="1")
-for i in 1:tdim-ss
-    back_step .= (A\I)*back_step
-    plot!(p,xn, back_step, label="$(i+1)")
+function solve_inverse(u;exact=true,n_it=4)
+    xn = x[2:xdim-1]
+    u = u[2:end-1]
+    ss = tdim-n_it+1
+    
+    A_inv = A\I
+    back_step = A_inv*u
+    p = plot()
+    plot!(p, xn, back_step,label="1")
+    for i in 1:tdim-ss
+        back_step .= A_inv*back_step
+        plot!(p,xn, back_step, label="$(i+1)")
+    end
+    if exact
+        plot!(p,xn,u_exact.(xn,t=dt*ss),label="exact",color=:red)
+    end
+    p
 end
-plot!(p,xn,u_exact.(xn,t=dt*ss),label="exact",color=:red)
-p
+
+solve_inverse(uData)
+
+ZI = zeros(xdim, tdim)
+ZI[:,1] .= 10 .*(x.>=π/4).*(x.<=3*π/4)   # u(x,0) = 10sin(2x)
+ZI[1,:] .= 0                 # u(0,t) = 0
+ZI[xdim,:] .= 0    
+for time in 2:tdim
+    ZI[v, time] .= A*ZI[v,time-1]
+end
+ud = ZI[:,tdim]
+ud_noisy = add_pct_noise(ud,sigma)
+
+solve_inverse(ud, exact=false)
+
+solve_inverse(ud_noisy,exact=false,n_it=3)
